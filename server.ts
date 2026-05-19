@@ -12,8 +12,10 @@ import {
   limit, 
   doc, 
   getDoc, 
-  getDocFromServer,
-  writeBatch
+  updateDoc,
+  deleteDoc,
+  writeBatch,
+  getDocFromServer
 } from "firebase/firestore";
 import { db, auth } from "./server/firebase";
 import { scrapeSource } from "./server/scrapers";
@@ -46,14 +48,24 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
+      userId: null,
+      email: null,
     },
     operationType,
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+function sanitizeFirestoreData(data: any) {
+  const sanitized: any = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
 }
 
 const app = express();
@@ -74,8 +86,7 @@ app.post("/api/subscribe", async (req, res) => {
     if (!snapshot.empty) {
       // Update existing subscription preferences
       const subId = snapshot.docs[0].id;
-      await addDoc(collection(db, "subscriptions"), { 
-        email, 
+      await updateDoc(doc(db, "subscriptions", subId), { 
         categories: categories || [],
         updatedAt: new Date().toISOString()
       });
@@ -145,9 +156,7 @@ app.post("/api/sources", async (req, res) => {
 app.delete("/api/sources/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const batch = writeBatch(db);
-    batch.delete(doc(db, "sources", id));
-    await batch.commit();
+    await deleteDoc(doc(db, "sources", id));
     res.json({ message: "Source decommissioned successfully" });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -191,6 +200,16 @@ app.post("/api/items/reset", async (req, res) => {
   }
 });
 
+app.post("/api/sync/all", async (req, res) => {
+  try {
+    // Trigger global sync in background
+    triggerGlobalSync().catch(err => console.error("Global sync failed:", err));
+    res.json({ message: "Global synchronization protocol initiated in background." });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 async function triggerGlobalSync() {
   console.log("Initiating global system synchronization...");
   const snapshot = await getDocs(collection(db, "sources"));
@@ -200,18 +219,18 @@ async function triggerGlobalSync() {
       const items = await scrapeSource(source);
       let saved = 0;
       for (const item of items) {
-        if (saved >= 5) break; // Limit initial reset-sync per source
+        if (saved >= 5) break; 
 
-        const existingQuery = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
-        const existingSnapshot = await getDocs(existingQuery);
+        const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
+        const existingSnapshot = await getDocs(q);
         if (existingSnapshot.empty) {
-          await sleep(10000); // Respect rate limit
+          await sleep(10000); 
           const aiResult = await summarizeAndCategorize(item);
-          await addDoc(collection(db, "items"), {
+          await addDoc(collection(db, "items"), sanitizeFirestoreData({
             ...item,
             ...aiResult,
             createdAt: new Date().toISOString()
-          });
+          }));
           saved++;
         }
       }
@@ -220,6 +239,8 @@ async function triggerGlobalSync() {
     }
   }
 }
+
+export default app;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -234,26 +255,22 @@ app.post("/api/scrape", async (req, res) => {
     const items = await scrapeSource(source);
     
     let savedCount = 0;
-    // Limit to 3 items per manual scrape to avoid quick rate limit hits and request timeouts
     const processingItems = items.slice(0, 3);
 
     for (const item of processingItems) {
-      // Check if already exists
-      const existingQuery = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
-      const existingSnapshot = await getDocs(existingQuery);
+      const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
+      const existingSnapshot = await getDocs(q);
       
       if (existingSnapshot.empty) {
-        // AI Phase: Summarize and Categorize
-        // Respect rate limit: 13 seconds per item (approx 4.6 per min) to be safe for free tier
         if (savedCount > 0) await sleep(13000); 
 
         const aiResult = await summarizeAndCategorize(item);
         
-        await addDoc(collection(db, "items"), {
+        await addDoc(collection(db, "items"), sanitizeFirestoreData({
           ...item,
           ...aiResult,
           createdAt: new Date().toISOString()
-        });
+        }));
         savedCount++;
       }
     }
@@ -338,22 +355,20 @@ cron.schedule("0 * * * *", async () => {
       const items = await scrapeSource(source);
       
       let savedInSource = 0;
-      // Process max 3 new items per source in background to spread load
       for (const item of items) {
         if (savedInSource >= 3) break;
 
-        const existingQuery = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
-        const existingSnapshot = await getDocs(existingQuery);
+        const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
+        const existingSnapshot = await getDocs(q);
         if (existingSnapshot.empty) {
-          // Respect rate limit: 12 seconds per item (5/min safe)
           await sleep(12000); 
           
           const aiResult = await summarizeAndCategorize(item);
-          await addDoc(collection(db, "items"), {
+          await addDoc(collection(db, "items"), sanitizeFirestoreData({
             ...item,
             ...aiResult,
             createdAt: new Date().toISOString()
-          });
+          }));
           savedInSource++;
         }
       }
@@ -372,6 +387,7 @@ cron.schedule("0 8 * * *", async () => {
 
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
+    
     const q = query(
       collection(db, "items"), 
       where("createdAt", ">=", yesterday.toISOString()),
@@ -379,6 +395,7 @@ cron.schedule("0 8 * * *", async () => {
       limit(20)
     );
     const itemSnapshot = await getDocs(q);
+      
     const items = itemSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
     if (items.length === 0) return;
@@ -404,4 +421,6 @@ cron.schedule("0 8 * * *", async () => {
   }
 });
 
-startServer();
+if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
+  startServer();
+}

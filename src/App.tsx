@@ -33,6 +33,13 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
+  const [confirmation, setConfirmation] = useState<{ 
+    title: string; 
+    message: string; 
+    onConfirm: () => void; 
+    actionLabel: string;
+    isDestructive?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -49,9 +56,9 @@ export default function App() {
 
       setSources(Array.isArray(s) ? s : []);
       setItems(Array.isArray(i) ? i : []);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to load data", err);
-      setError("System currently unavailable. Please check backend connection.");
+      setError(`System connection error: ${err.message || 'Check terminal logs'}`);
       setSources([]);
       setItems([]);
     } finally {
@@ -59,27 +66,56 @@ export default function App() {
     }
   };
 
-  const handleReset = async () => {
-    if (!confirm("Purge Intelligence Repository? All technical briefings will be cleared and a fresh system-wide sync will be initiated.")) return;
+  const handleGlobalSync = async () => {
     setLoading(true);
     try {
-      await api.resetItems();
-      setTimeout(loadData, 3000);
+      const res = await api.syncAllSources();
+      if ('error' in res) throw new Error(res.error as string);
+      await loadData();
     } catch (err) {
-      setError("Purge protocol failed");
+      setError("Global synchronization protocol failed");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteSource = async (id: string, name: string) => {
-    if (!confirm(`Decommission intelligence node "${name}"? This will stop future ingestion from this endpoint.`)) return;
-    try {
-      await api.deleteSource(id);
-      loadData();
-    } catch (err) {
-      setError("Failed to decommission source");
-    }
+  const handleReset = () => {
+    setConfirmation({
+      title: "Purge Intelligence Repository?",
+      message: "All technical briefings will be cleared and a fresh system-wide sync will be initiated. This action cannot be undone.",
+      actionLabel: "Execute Purge",
+      isDestructive: true,
+      onConfirm: async () => {
+        setLoading(true);
+        setConfirmation(null);
+        try {
+          await api.resetItems();
+          setTimeout(loadData, 3000);
+        } catch (err) {
+          setError("Purge protocol failed");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
+  };
+
+  const handleDeleteSource = (id: string, name: string) => {
+    setConfirmation({
+      title: "Decommission Node?",
+      message: `Confirm decommissioning of intelligence node "${name}". This will stop future ingestion from this endpoint.`,
+      actionLabel: "Decommission",
+      isDestructive: true,
+      onConfirm: async () => {
+        setConfirmation(null);
+        try {
+          await api.deleteSource(id);
+          loadData();
+        } catch (err) {
+          setError("Failed to decommission source");
+        }
+      }
+    });
   };
 
   if (loading && items.length === 0) {
@@ -143,7 +179,7 @@ export default function App() {
             <Trash2 size={18} />
           </button>
           <button 
-            onClick={loadData}
+            onClick={handleGlobalSync}
             disabled={loading}
             className="group flex items-center gap-2 text-xs font-semibold bg-brand-primary text-white px-5 py-2.5 rounded-xl hover:bg-brand-secondary transition-all shadow-lg shadow-brand-primary/25 disabled:opacity-50"
           >
@@ -172,17 +208,28 @@ export default function App() {
                 )}
                 {items.map((item, idx) => (
                   <div key={item.id} className="bg-white rounded-[32px] border border-slate-100 overflow-hidden flex flex-col h-full card-hover">
-                    {item.imageUrl && (
-                      <div className="h-48 overflow-hidden relative group">
+                    <div className="h-48 overflow-hidden relative group bg-slate-100 flex items-center justify-center">
+                      {item.imageUrl ? (
                         <img 
                           src={item.imageUrl} 
                           alt={item.title}
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-slate-300">
+                          {item.contentType === "video" ? <Youtube size={48} strokeWidth={1.5} /> : <Database size={48} strokeWidth={1.5} />}
+                          <span className="text-[10px] font-bold uppercase tracking-widest mt-4 opacity-50">Intelligence Node</span>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      
+                      {item.contentType === "video" && (
+                        <div className="absolute top-4 right-4 bg-rose-600 text-white p-1.5 rounded-lg shadow-lg">
+                          <Youtube size={14} />
+                        </div>
+                      )}
+                    </div>
                     
                     <div className="p-7 flex flex-col flex-1">
                       <div className="flex justify-between items-center mb-5">
@@ -317,8 +364,70 @@ export default function App() {
         {selectedItem && (
           <ItemModal item={selectedItem} onClose={() => setSelectedItem(null)} />
         )}
+        {confirmation && (
+          <ConfirmationModal 
+            {...confirmation} 
+            onClose={() => setConfirmation(null)} 
+          />
+        )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function ConfirmationModal({ 
+  title, 
+  message, 
+  onConfirm, 
+  onClose, 
+  actionLabel, 
+  isDestructive 
+}: { 
+  title: string; 
+  message: string; 
+  onConfirm: () => void; 
+  onClose: () => void;
+  actionLabel: string;
+  isDestructive?: boolean;
+}) {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[110] flex items-center justify-center p-6"
+    >
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0, y: 10 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 10 }}
+        className="bg-white w-full max-w-md rounded-[32px] shadow-2xl relative z-10 p-8 lg:p-10 text-center"
+      >
+        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 ${isDestructive ? 'bg-rose-50 text-rose-500' : 'bg-indigo-50 text-indigo-500'}`}>
+          <Trash2 size={28} />
+        </div>
+        <h3 className="text-2xl font-bold text-slate-800 tracking-tight mb-3">{title}</h3>
+        <p className="text-sm font-medium text-slate-500 leading-relaxed mb-8">{message}</p>
+        
+        <div className="grid grid-cols-2 gap-3">
+          <button 
+            onClick={onClose}
+            className="py-4 bg-slate-50 text-slate-600 text-xs font-bold uppercase tracking-widest rounded-2xl hover:bg-slate-100 transition-all"
+          >
+            Cancel
+          </button>
+          <button 
+            onClick={onConfirm}
+            className={`py-4 text-white text-xs font-bold uppercase tracking-widest rounded-2xl transition-all shadow-lg shadow-opacity-20 ${
+              isDestructive ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20' : 'bg-brand-primary hover:bg-brand-secondary shadow-indigo-600/20'
+            }`}
+          >
+            {actionLabel}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -346,17 +455,23 @@ function ItemModal({ item, onClose }: { item: FeedItem; onClose: () => void }) {
         </button>
 
         <div className="overflow-y-auto flex-1">
-          {item.imageUrl && (
-            <div className="w-full h-[400px] relative">
-              <img 
-                src={item.imageUrl} 
-                alt={item.title} 
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
-            </div>
-          )}
+          <div className="w-full h-[300px] lg:h-[400px] relative bg-slate-50 flex items-center justify-center overflow-hidden">
+            {item.imageUrl ? (
+              <>
+                <img 
+                  src={item.imageUrl} 
+                  alt={item.title} 
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-slate-200">
+                {item.contentType === "video" ? <Youtube size={80} strokeWidth={1} /> : <Database size={80} strokeWidth={1} />}
+              </div>
+            )}
+          </div>
 
           <div className="px-8 lg:px-16 py-12">
             <div className="flex items-center gap-4 mb-8">

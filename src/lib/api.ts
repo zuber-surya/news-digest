@@ -38,6 +38,13 @@ export const api = {
     });
     return res.json();
   },
+  syncAllSources: async (): Promise<{ message: string }> => {
+    const res = await fetch("/api/sync/all", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    return res.json();
+  },
   subscribe: async (email: string, categories?: string[]): Promise<{ message: string }> => {
     const res = await fetch("/api/subscribe", {
       method: "POST",

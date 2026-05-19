@@ -10,6 +10,8 @@ const ai = new GoogleGenAI({
   }
 });
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function summarizeAndCategorize(item: Partial<FeedItem>) {
   const prompt = `
     Analyze the following news item:
@@ -25,30 +27,49 @@ export async function summarizeAndCategorize(item: Partial<FeedItem>) {
        - Content Type: Blog Post, YouTube Video, Product Update, Release Notes, Tutorial
   `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            categories: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["summary", "categories"]
-        }
-      }
-    });
+  const maxRetries = 3;
+  let lastError: any;
 
-    const data = JSON.parse(response.text);
-    return data;
-  } catch (err) {
-    console.error("Gemini Error:", err);
-    return {
-      summary: item.content?.substring(0, 150) + "...",
-      categories: ["Uncategorized"]
-    };
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              categories: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["summary", "categories"]
+          }
+        }
+      });
+
+      const data = JSON.parse(response.text);
+      return data;
+    } catch (err: any) {
+      lastError = err;
+      const status = err?.status || err?.code;
+      
+      // If it's a transient error (503 Unavailable or 429 Rate Limit), retry
+      if (status === 503 || status === 429 || err?.message?.includes("503")) {
+        const delay = 2000 * Math.pow(2, attempt);
+        console.warn(`Gemini API busy (Status: ${status}), retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxRetries})`);
+        await sleep(delay);
+        continue;
+      }
+      
+      console.error("Gemini Critical Error:", err);
+      break; // Non-retryable error
+    }
   }
+
+  // Fallback if all retries fail or non-retryable error occurred
+  return {
+    summary: item.content?.substring(0, 150) + "...",
+    categories: ["Uncategorized"]
+  };
 }

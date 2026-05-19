@@ -86,27 +86,44 @@ async function scrapeHtml(source: Source): Promise<Partial<FeedItem>[]> {
 }
 
 async function scrapeYouTube(source: Source): Promise<Partial<FeedItem>[]> {
-  const apiKey = process.env.YOUTUBE_API_KEY;
-  if (!apiKey || !source.channelId) return [];
+  try {
+    let channelId = source.channelId;
+    
+    // If no channelId, try to extract it from the URL
+    if (!channelId && source.url.includes("youtube.com")) {
+      const response = await fetch(source.url);
+      const html = await response.text();
+      const $ = cheerio.load(html);
+      
+      // Look for channel ID in metadata
+      channelId = $('meta[itemprop="channelId"]').attr("content") || 
+                  $('link[rel="canonical"]').attr("href")?.split("/channel/")[1] ||
+                  html.match(/"externalId":"(.*?)"/)?.[1];
+    }
 
-  const youtube = google.youtube({ version: "v3", auth: apiKey });
-  const res = await youtube.search.list({
-    channelId: source.channelId,
-    part: ["snippet"],
-    order: "date",
-    maxResults: 10
-  });
+    if (!channelId) {
+      console.warn(`Could not resolve channelId for ${source.name}`);
+      return [];
+    }
 
-  return (res.data.items || []).map(item => ({
-    title: item.snippet?.title || "Untitled Video",
-    url: `https://www.youtube.com/watch?v=${item.id?.videoId}`,
-    content: item.snippet?.description || "",
-    imageUrl: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.default?.url,
-    publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
-    sourceId: source.id,
-    fingerprint: generateFingerprint(item.id?.videoId || ""),
-    contentType: "video"
-  }));
+    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    const feed = await parser.parseURL(rssUrl);
+
+    return feed.items.map(item => ({
+      title: item.title || "Untitled Video",
+      url: item.link || "",
+      content: item.contentSnippet || item.content || "",
+      imageUrl: (item as any).mediaGroups?.[0]?.contents?.[0]?.url || 
+                `https://i.ytimg.com/vi/${(item as any).id?.split(":")[2]}/hqdefault.jpg`,
+      publishedAt: item.isoDate || new Date().toISOString(),
+      sourceId: source.id,
+      fingerprint: generateFingerprint(item.link || item.title || ""),
+      contentType: "video"
+    }));
+  } catch (err) {
+    console.error(`YouTube RSS scrape failed for ${source.name}:`, err);
+    return [];
+  }
 }
 
 function generateFingerprint(data: string): string {
