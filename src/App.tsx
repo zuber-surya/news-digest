@@ -14,10 +14,17 @@ import {
   Mail,
   Youtube,
   Globe,
-  X
+  X,
+  Trash2
 } from "lucide-react";
 import { api } from "./lib/api";
 import { Source, FeedItem } from "./types";
+
+const CATEGORIES = {
+  "AI Companies": ["OpenAI", "Anthropic", "DeepSeek", "Google AI", "Meta AI", "Mistral"],
+  "AWS Services": ["Bedrock", "SageMaker", "Redshift", "Glue", "Lambda", "EMR", "OpenSearch"],
+  "Technical Topics": ["Generative AI", "RAG", "AI Agents", "Vector Databases", "Data Engineering", "LLMs", "MLOps"]
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<"feed" | "sources" | "digests">("feed");
@@ -52,11 +59,35 @@ export default function App() {
     }
   };
 
+  const handleReset = async () => {
+    if (!confirm("Purge Intelligence Repository? All technical briefings will be cleared and a fresh system-wide sync will be initiated.")) return;
+    setLoading(true);
+    try {
+      await api.resetItems();
+      setTimeout(loadData, 3000);
+    } catch (err) {
+      setError("Purge protocol failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteSource = async (id: string, name: string) => {
+    if (!confirm(`Decommission intelligence node "${name}"? This will stop future ingestion from this endpoint.`)) return;
+    try {
+      await api.deleteSource(id);
+      loadData();
+    } catch (err) {
+      setError("Failed to decommission source");
+    }
+  };
+
   if (loading && items.length === 0) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-white">
-        <RefreshCw size={40} className="animate-spin mb-8" />
-        <h1 className="text-sm font-bold uppercase tracking-[0.3em]">Initializing NewsDigest</h1>
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-white text-slate-900">
+        <RefreshCw size={40} className="animate-indigo-500 animate-spin mb-8" />
+        <h1 className="text-xl font-bold tracking-tight">ENGINEERED INTELLIGENCE</h1>
+        <p className="text-sm font-medium text-slate-400 mt-2 uppercase tracking-widest">Initializing Protocol</p>
       </div>
     );
   }
@@ -74,10 +105,10 @@ export default function App() {
       <nav className="fixed top-0 left-0 right-0 h-16 border-b border-slate-200 backdrop-blur-md bg-white/80 flex items-center justify-between px-6 lg:px-12 z-50">
         <div className="flex items-center gap-10">
           <div className="flex items-center gap-2.5 group cursor-pointer">
-            <div className="w-9 h-9 bg-brand-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-brand-primary/20 transition-transform group-hover:scale-110">
+            <div className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-slate-900/10 transition-transform group-hover:scale-110">
               <Database size={18} />
             </div>
-            <span className="font-bold tracking-tight text-xl text-slate-800">Digest</span>
+            <span className="font-bold tracking-tight text-xl text-slate-800">Engineered Intelligence</span>
           </div>
           
           <div className="hidden md:flex items-center gap-1">
@@ -103,6 +134,14 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          <button 
+            onClick={handleReset}
+            disabled={loading}
+            className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all disabled:opacity-30"
+            title="Purge Repository"
+          >
+            <Trash2 size={18} />
+          </button>
           <button 
             onClick={loadData}
             disabled={loading}
@@ -236,6 +275,13 @@ export default function App() {
                           >
                             <RefreshCw size={14} />
                           </button>
+                          <button 
+                            onClick={() => handleDeleteSource(source.id!, source.name)}
+                            className="p-3 bg-white border border-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all rounded-xl shadow-sm"
+                            title="Decommission Node"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -365,15 +411,22 @@ function ItemModal({ item, onClose }: { item: FeedItem; onClose: () => void }) {
 
 function SubscriptionForm() {
   const [email, setEmail] = useState("");
+  const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
+
+  const toggleCategory = (cat: string) => {
+    setSelectedCats(prev => 
+      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+    );
+  };
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("loading");
     setMessage("");
     try {
-      const res = await api.subscribe(email);
+      const res = await api.subscribe(email, selectedCats);
       if ("error" in res) {
         setStatus("error");
         setMessage(res.error as string);
@@ -411,31 +464,58 @@ function SubscriptionForm() {
   };
 
   return (
-    <div className="space-y-6 max-w-sm mx-auto">
-      <form onSubmit={handleSubscribe} className="space-y-4">
-        <div className="relative group">
-          <input 
-            required
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            placeholder="USER@NETWORK.LOCAL"
-            className="w-full bg-slate-50 border border-slate-200 px-5 py-4 rounded-2xl text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-brand-primary/10 focus:border-brand-primary/30 transition-all text-center tracking-widest placeholder:text-slate-300"
-          />
+    <div className="space-y-8 max-w-xl mx-auto">
+      <form onSubmit={handleSubscribe} className="space-y-8">
+        <div className="space-y-4">
+          <div className="relative group">
+            <input 
+              required
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="USER@NETWORK.LOCAL"
+              className="w-full bg-slate-50 border border-slate-200 px-5 py-5 rounded-2xl text-base font-semibold focus:outline-none focus:ring-4 focus:ring-brand-primary/10 focus:border-brand-primary/30 transition-all text-center tracking-widest placeholder:text-slate-300"
+            />
+          </div>
+
+          <div className="space-y-6 text-left">
+            {Object.entries(CATEGORIES).map(([group, cats]) => (
+              <div key={group} className="space-y-3">
+                <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">{group}</h4>
+                <div className="flex flex-wrap gap-2">
+                  {cats.map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleCategory(cat)}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        selectedCats.includes(cat)
+                          ? "bg-brand-primary border-brand-primary text-white shadow-lg shadow-brand-primary/20"
+                          : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button 
             type="submit"
             disabled={status === "loading"}
-            className="w-full py-4 bg-brand-primary text-white text-xs font-bold uppercase tracking-widest rounded-2xl hover:bg-brand-secondary transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-50"
+            className="w-full py-5 bg-brand-primary text-white text-xs font-bold uppercase tracking-widest rounded-2xl hover:bg-brand-secondary transition-all shadow-xl shadow-brand-primary/25 disabled:opacity-50"
           >
-            {status === "loading" ? "Processing..." : "Link Endpoint"}
+            {status === "loading" ? "Processing..." : "Link Profile"}
           </button>
           <button 
             type="button"
             onClick={handleTest}
             disabled={status === "loading"}
-            className="w-full py-4 bg-white border border-slate-200 text-slate-600 text-xs font-bold uppercase tracking-widest rounded-2xl hover:bg-slate-50 transition-all disabled:opacity-50"
+            className="w-full py-5 bg-white border border-slate-200 text-slate-600 text-xs font-bold uppercase tracking-widest rounded-2xl hover:bg-slate-50 transition-all disabled:opacity-50"
           >
             Test Sync
           </button>
@@ -446,7 +526,7 @@ function SubscriptionForm() {
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }} 
           animate={{ opacity: 1, scale: 1 }}
-          className={`text-[11px] font-bold uppercase tracking-wider p-4 rounded-2xl border ${status === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-rose-50 border-rose-100 text-rose-600'}`}
+          className={`text-xs font-bold uppercase tracking-wider p-5 rounded-2xl border text-center ${status === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-rose-50 border-rose-100 text-rose-600'}`}
         >
           {message}
         </motion.div>

@@ -29,15 +29,15 @@ export interface FeedItem {
 
 export interface Subscription {
   id?: string;
-  userId: string;
-  sourceIds: string[];
-  schedule: string; // cron expression
+  email: string;
+  categories: string[];
   lastDigestSentAt?: string;
+  createdAt: string;
 }
 
 export interface Digest {
   id?: string;
-  userId: string;
+  email: string;
   subscriptionId: string;
   itemIds: string[];
   sentAt: string;

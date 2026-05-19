@@ -1,6 +1,6 @@
 {
-  "name": "NewsDigest AI",
-  "description": "AI-powered news aggregator and email digest system that collects updates from RSS, web pages, and YouTube.",
+  "name": "Engineered Intelligence",
+  "description": "Technical briefing platform for AI, Data, and Cloud Engineers. Delivers curated updates from OpenAI, Anthropic, AWS, and leading engineering blogs.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

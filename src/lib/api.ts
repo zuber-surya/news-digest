@@ -25,11 +25,24 @@ export const api = {
     });
     return res.json();
   },
-  subscribe: async (email: string): Promise<{ message: string }> => {
+  deleteSource: async (sourceId: string): Promise<{ message: string }> => {
+    const res = await fetch(`/api/sources/${sourceId}`, {
+      method: "DELETE",
+    });
+    return res.json();
+  },
+  resetItems: async (): Promise<{ message: string }> => {
+    const res = await fetch("/api/items/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    return res.json();
+  },
+  subscribe: async (email: string, categories?: string[]): Promise<{ message: string }> => {
     const res = await fetch("/api/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, categories }),
     });
     return res.json();
   },

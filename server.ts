@@ -64,16 +64,27 @@ app.use(express.json());
 // API Routes
 app.post("/api/subscribe", async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, categories } = req.body;
     if (!email) return res.status(400).json({ error: "Email is required" });
     
     // Check if already exists in subscriptions collection
     const q = query(collection(db, "subscriptions"), where("email", "==", email));
     const snapshot = await getDocs(q);
-    if (!snapshot.empty) return res.json({ message: "Already subscribed" });
+    
+    if (!snapshot.empty) {
+      // Update existing subscription preferences
+      const subId = snapshot.docs[0].id;
+      await addDoc(collection(db, "subscriptions"), { 
+        email, 
+        categories: categories || [],
+        updatedAt: new Date().toISOString()
+      });
+      return res.json({ message: "Preferences updated" });
+    }
 
     await addDoc(collection(db, "subscriptions"), {
       email,
+      categories: categories || [],
       createdAt: new Date().toISOString()
     });
     res.json({ message: "Subscription successful" });
@@ -131,6 +142,18 @@ app.post("/api/sources", async (req, res) => {
   }
 });
 
+app.delete("/api/sources/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "sources", id));
+    await batch.commit();
+    res.json({ message: "Source decommissioned successfully" });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.get("/api/items", async (req, res) => {
   try {
     const q = query(collection(db, "items"), orderBy("publishedAt", "desc"), limit(50));
@@ -145,6 +168,58 @@ app.get("/api/items", async (req, res) => {
     }
   }
 });
+
+app.post("/api/items/reset", async (req, res) => {
+  try {
+    const snapshot = await getDocs(collection(db, "items"));
+    if (snapshot.empty) {
+      return res.json({ message: "Repository already empty. Starting sync..." });
+    }
+
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    
+    // Trigger global sync in background
+    triggerGlobalSync().catch(err => console.error("Background sync failed:", err));
+    
+    res.json({ message: "Repository cleared. System synchronization initiated." });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+async function triggerGlobalSync() {
+  console.log("Initiating global system synchronization...");
+  const snapshot = await getDocs(collection(db, "sources"));
+  for (const sourceDoc of snapshot.docs) {
+    const source = { id: sourceDoc.id, ...sourceDoc.data() } as any;
+    try {
+      const items = await scrapeSource(source);
+      let saved = 0;
+      for (const item of items) {
+        if (saved >= 5) break; // Limit initial reset-sync per source
+
+        const existingQuery = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
+        const existingSnapshot = await getDocs(existingQuery);
+        if (existingSnapshot.empty) {
+          await sleep(10000); // Respect rate limit
+          const aiResult = await summarizeAndCategorize(item);
+          await addDoc(collection(db, "items"), {
+            ...item,
+            ...aiResult,
+            createdAt: new Date().toISOString()
+          });
+          saved++;
+        }
+      }
+    } catch (err) {
+      console.error(`Sync failed for ${source.name}:`, err);
+    }
+  }
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -193,12 +268,30 @@ async function seedSources() {
   try {
     const snapshot = await getDocs(collection(db, "sources"));
     if (snapshot.empty) {
-      console.log("Seeding default sources...");
+      console.log("Seeding engineering intelligence sources...");
       const defaults = [
+        // AI Blogs
+        { name: "OPENAI_BLOG", url: "https://openai.com/news/rss.xml", type: "rss" },
+        { name: "ANTHROPIC_NEWS", url: "https://www.anthropic.com/index.xml", type: "rss" },
+        { name: "DEEPSEEK_UPDATES", url: "https://blog.deepseek.com/feed/", type: "rss" },
+        { name: "GOOGLE_AI_BLOG", url: "https://blog.google/technology/ai/rss/", type: "rss" },
+        { name: "META_AI_NEWS", url: "https://ai.meta.com/blog/rss/", type: "rss" },
+        
+        // AWS What's New
+        { name: "AWS_WHATS_NEW", url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/", type: "rss" },
+        { name: "AWS_BEDROCK_RELEASES", url: "https://aws.amazon.com/blogs/aws/tag/amazon-bedrock/feed/", type: "rss" },
+        { name: "AWS_SAGEMAKER_UPDATES", url: "https://aws.amazon.com/blogs/aws/tag/amazon-sagemaker/feed/", type: "rss" },
+        { name: "AWS_BIG_DATA_BLOG", url: "https://aws.amazon.com/blogs/big-data/feed/", type: "rss" },
+        
+        // Technical Blogs
         { name: "THE_RUNDOWN_AI", url: "https://therundownai.beehiiv.com/rss", type: "rss" },
-        { name: "AI_NEWS", url: "https://www.artificialintelligence-news.com/feed/", type: "rss" },
-        { name: "BBC_TECH_GLOBAL", url: "https://feeds.bbci.co.uk/news/technology/rss.xml", type: "rss" },
-        { name: "TECHCRUNCH_AI", url: "https://techcrunch.com/category/artificial-intelligence/feed/", type: "rss" }
+        { name: "AI_NEWS_NETWORK", url: "https://www.artificialintelligence-news.com/feed/", type: "rss" },
+        { name: "DATABRICKS_BLOG", url: "https://www.databricks.com/feed", type: "rss" },
+        
+        // YouTube Technical Channels
+        { name: "AWS_EVENTS_YT", url: "https://www.youtube.com/@AWSEvents/videos", type: "youtube" },
+        { name: "AI_EXPLAINED_YT", url: "https://www.youtube.com/@AIExplained/videos", type: "youtube" },
+        { name: "ANDREJ_KARPATHY_YT", url: "https://www.youtube.com/@AndrejKarpathy/videos", type: "youtube" }
       ];
       for (const source of defaults) {
         await addDoc(collection(db, "sources"), {
@@ -291,9 +384,20 @@ cron.schedule("0 8 * * *", async () => {
     if (items.length === 0) return;
 
     for (const subDoc of subSnapshot.docs) {
-      const { email } = subDoc.data();
-      console.log(`Sending digest to ${email}`);
-      await sendDigestEmail(email, items);
+      const { email, categories: userCategories } = subDoc.data();
+      
+      // Filter items by user categories if specified
+      let filteredItems = items;
+      if (userCategories && userCategories.length > 0) {
+        filteredItems = items.filter(item => 
+          item.categories.some((cat: string) => userCategories.includes(cat))
+        );
+      }
+
+      if (filteredItems.length === 0) continue;
+
+      console.log(`Sending filtered digest (${filteredItems.length} items) to ${email}`);
+      await sendDigestEmail(email, filteredItems);
     }
   } catch (err) {
     console.error("Scheduled digest failed:", err);

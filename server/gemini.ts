@@ -17,8 +17,12 @@ export async function summarizeAndCategorize(item: Partial<FeedItem>) {
     Content: ${item.content}
     
     Provide:
-    1. A concise 2-sentence summary.
-    2. A list of 1-3 categories (e.g., Technology, Politics, Sports, Business).
+    1. A concise 2-sentence summary focused on technical impact for engineers.
+    2. A list of 1-4 specific categories strictly from this taxonomy:
+       - AI Companies: OpenAI, Anthropic, DeepSeek, Google AI, Meta AI, Mistral
+       - AWS Services: Bedrock, SageMaker, Redshift, Glue, Lambda, EMR, OpenSearch
+       - Technical Topics: Generative AI, RAG, AI Agents, Vector Databases, Data Engineering, LLMs, MLOps
+       - Content Type: Blog Post, YouTube Video, Product Update, Release Notes, Tutorial
   `;
 
   try {
