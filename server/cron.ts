@@ -65,7 +65,7 @@ export function setupCronJobs() {
       yesterday.setDate(yesterday.getDate() - 1);
       
       const q = query(
-        collection(db, "items"), 
+        collection(db, "items"),
         where("createdAt", ">=", yesterday.toISOString()),
         orderBy("createdAt", "desc"),
         limit(20)

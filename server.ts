@@ -14,7 +14,9 @@ import {
   updateDoc,
   deleteDoc,
   writeBatch,
-  getDocFromServer
+  getDocFromServer,
+  Timestamp,
+  FieldValue
 } from "firebase/firestore";
 import { db, auth } from "./server/firebase";
 import firebaseConfig from "./firebase-applet-config.json";
@@ -47,8 +49,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid || null,
-      email: auth.currentUser?.email || null,
+      userId: null,
+      email: null,
     },
     operationType,
     path
@@ -224,31 +226,36 @@ app.post("/api/sync/all", async (req, res) => {
 
 async function triggerGlobalSync() {
   console.log("Initiating global system synchronization...");
-  const snapshot = await getDocs(collection(db, "sources"));
-  for (const sourceDoc of snapshot.docs) {
-    const source = { id: sourceDoc.id, ...sourceDoc.data() } as any;
-    try {
-      const items = await scrapeSource(source);
-      let saved = 0;
-      for (const item of items) {
-        if (saved >= 5) break; 
-
-        const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
-        const existingSnapshot = await getDocs(q);
-        if (existingSnapshot.empty) {
-          await sleep(10000); 
-          const aiResult = await summarizeAndCategorize(item);
-          await addDoc(collection(db, "items"), sanitizeFirestoreData({
-            ...item,
-            ...aiResult,
-            createdAt: new Date().toISOString()
-          }));
-          saved++;
+  try {
+    const snapshot = await getDocs(collection(db, "sources"));
+    for (const sourceDoc of snapshot.docs) {
+      const source = { id: sourceDoc.id, ...sourceDoc.data() } as any;
+      try {
+        console.log(`Syncing source: ${source.name}`);
+        const items = await scrapeSource(source);
+        let saved = 0;
+        for (const item of items) {
+          if (saved >= 5) break; 
+  
+          const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
+          const existingSnapshot = await getDocs(q);
+          if (existingSnapshot.empty) {
+            await sleep(10000); 
+            const aiResult = await summarizeAndCategorize(item);
+            await addDoc(collection(db, "items"), sanitizeFirestoreData({
+              ...item,
+              ...aiResult,
+              createdAt: new Date().toISOString()
+            }));
+            saved++;
+          }
         }
+      } catch (err) {
+        console.error(`Sync failed for ${source.name}:`, err);
       }
-    } catch (err) {
-      console.error(`Sync failed for ${source.name}:`, err);
     }
+  } catch (err) {
+    console.error("Global sync failed at source retrieval:", err);
   }
 }
 
