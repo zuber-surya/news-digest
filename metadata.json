@@ -1,0 +1,6 @@
+{
+  "name": "NewsDigest AI",
+  "description": "AI-powered news aggregator and email digest system that collects updates from RSS, web pages, and YouTube.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

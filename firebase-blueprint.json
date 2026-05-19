@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "Source": {
+      "title": "Source",
+      "description": "A news source configuration",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string", "enum": ["rss", "html", "youtube"] },
+        "channelId": { "type": "string" },
+        "defaultCategory": { "type": "string" },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "url", "type"]
+    },
+    "FeedItem": {
+      "title": "Feed Item",
+      "description": "An individual content item from a source",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "summary": { "type": "string" },
+        "content": { "type": "string" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "sourceId": { "type": "string" },
+        "categories": { "type": "array", "items": { "type": "string" } },
+        "fingerprint": { "type": "string" },
+        "contentType": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "url", "sourceId", "fingerprint"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "User subscription to sources and digest schedule",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "sourceIds": { "type": "array", "items": { "type": "string" } },
+        "schedule": { "type": "string" },
+        "lastDigestSentAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "sourceIds", "schedule"]
+    },
+    "Digest": {
+      "title": "Digest",
+      "description": "A generated email digest record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "subscriptionId": { "type": "string" },
+        "itemIds": { "type": "array", "items": { "type": "string" } },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "sent", "failed"] }
+      },
+      "required": ["userId", "itemIds", "sentAt"]
+    }
+  },
+  "firestore": {
+    "/sources/{sourceId}": {
+      "schema": "Source",
+      "description": "Managed content sources"
+    },
+    "/items/{itemId}": {
+      "schema": "FeedItem",
+      "description": "Collected feed items"
+    },
+    "/subscriptions/{subId}": {
+      "schema": "Subscription",
+      "description": "User subscriptions"
+    },
+    "/digests/{digestId}": {
+      "schema": "Digest",
+      "description": "Sent or scheduled digests"
+    }
+  }
+}
