@@ -77,7 +77,7 @@ export function setupCronJobs() {
       if (items.length === 0) return;
 
       for (const subDoc of subSnapshot.docs) {
-        const { email, categories: userCategories } = subDoc.data();
+        const { email, categories: userCategories } = subDoc.data() as any;
         
         // Filter items by user categories if specified
         let filteredItems = items;

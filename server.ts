@@ -13,9 +13,11 @@ import {
   getDoc, 
   updateDoc,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  getDocFromServer
 } from "firebase/firestore";
 import { db, auth } from "./server/firebase";
+import firebaseConfig from "./firebase-applet-config.json";
 import { scrapeSource } from "./server/scrapers";
 import { summarizeAndCategorize } from "./server/gemini";
 import { sendDigestEmail } from "./server/email";
@@ -45,8 +47,8 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: null,
-      email: null,
+      userId: auth.currentUser?.uid || null,
+      email: auth.currentUser?.email || null,
     },
     operationType,
     path
@@ -70,7 +72,20 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// API Routes
+app.get("/api/health", async (req, res) => {
+  try {
+    await getDocFromServer(doc(db, "test", "connection"));
+    res.json({ status: "ok", firestore: "connected", databaseId: firebaseConfig.firestoreDatabaseId });
+  } catch (err) {
+    res.status(500).json({ 
+      status: "error", 
+      firestore: "disconnected", 
+      error: err instanceof Error ? err.message : String(err),
+      databaseId: firebaseConfig.firestoreDatabaseId 
+    });
+  }
+});
+
 app.post("/api/subscribe", async (req, res) => {
   try {
     const { email, categories } = req.body;
@@ -318,7 +333,18 @@ async function seedSources() {
   }
 }
 
+async function testConnection() {
+  console.log("Testing Firestore connection...");
+  try {
+    await getDocFromServer(doc(db, "test", "connection"));
+    console.log("Firestore connection verified successfully.");
+  } catch (error) {
+    console.error("Firestore connection test failed:", error);
+  }
+}
+
 async function startServer() {
+  await testConnection();
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
