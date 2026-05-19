@@ -1,7 +1,7 @@
 import Parser from "rss-parser";
 import * as cheerio from "cheerio";
 import { google } from "googleapis";
-import { Source, FeedItem } from "../src/types";
+import { Source, FeedItem } from "../src/types.js";
 import crypto from "crypto";
 
 const parser = new Parser();

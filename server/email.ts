@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { Digest, FeedItem } from "../src/types";
+import { Digest, FeedItem } from "../src/types.js";
 
 export async function sendDigestEmail(to: string, items: FeedItem[]) {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS || !process.env.SMTP_FROM) {

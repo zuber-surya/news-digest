@@ -18,11 +18,11 @@ import {
   Timestamp,
   FieldValue
 } from "firebase/firestore";
-import { db, auth } from "./server/firebase";
+import { db, auth } from "./server/firebase.js";
 import firebaseConfig from "./firebase-applet-config.json";
-import { scrapeSource } from "./server/scrapers";
-import { summarizeAndCategorize } from "./server/gemini";
-import { sendDigestEmail } from "./server/email";
+import { scrapeSource } from "./server/scrapers.js";
+import { summarizeAndCategorize } from "./server/gemini.js";
+import { sendDigestEmail } from "./server/email.js";
 
 dotenv.config();
 

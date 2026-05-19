@@ -1,9 +1,9 @@
 import cron from "node-cron";
 import { collection, getDocs, query, where, orderBy, limit, addDoc } from "firebase/firestore";
-import { db } from "./firebase";
-import { scrapeSource } from "./scrapers";
-import { summarizeAndCategorize } from "./gemini";
-import { sendDigestEmail } from "./email";
+import { db } from "./firebase.js";
+import { scrapeSource } from "./scrapers.js";
+import { summarizeAndCategorize } from "./gemini.js";
+import { sendDigestEmail } from "./email.js";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
