@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import * as dotenv from "dotenv";
 import { 
   collection, 
@@ -14,14 +13,12 @@ import {
   getDoc, 
   updateDoc,
   deleteDoc,
-  writeBatch,
-  getDocFromServer
+  writeBatch
 } from "firebase/firestore";
 import { db, auth } from "./server/firebase";
 import { scrapeSource } from "./server/scrapers";
 import { summarizeAndCategorize } from "./server/gemini";
 import { sendDigestEmail } from "./server/email";
-import cron from "node-cron";
 
 dotenv.config();
 
@@ -240,8 +237,6 @@ async function triggerGlobalSync() {
   }
 }
 
-export default app;
-
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 app.post("/api/scrape", async (req, res) => {
@@ -324,8 +319,8 @@ async function seedSources() {
 }
 
 async function startServer() {
-  await seedSources();
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -334,93 +329,24 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith('/api')) return next();
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    seedSources().catch(console.error);
   });
 }
 
-// Background Task: Periodic Scraping
-cron.schedule("0 * * * *", async () => {
-  console.log("Running scheduled scraping task...");
-  try {
-    const snapshot = await getDocs(collection(db, "sources"));
-    for (const sourceDoc of snapshot.docs) {
-      const source = { id: sourceDoc.id, ...sourceDoc.data() } as any;
-      console.log(`Scraping source: ${source.name}`);
-      const items = await scrapeSource(source);
-      
-      let savedInSource = 0;
-      for (const item of items) {
-        if (savedInSource >= 3) break;
-
-        const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
-        const existingSnapshot = await getDocs(q);
-        if (existingSnapshot.empty) {
-          await sleep(12000); 
-          
-          const aiResult = await summarizeAndCategorize(item);
-          await addDoc(collection(db, "items"), sanitizeFirestoreData({
-            ...item,
-            ...aiResult,
-            createdAt: new Date().toISOString()
-          }));
-          savedInSource++;
-        }
-      }
-    }
-  } catch (err) {
-    console.error("Scheduled scrape failed:", err);
-  }
-});
-
-// Background Task: Daily Digest (Every day at 8:00 AM)
-cron.schedule("0 8 * * *", async () => {
-  console.log("Running scheduled daily digest...");
-  try {
-    const subSnapshot = await getDocs(collection(db, "subscriptions"));
-    if (subSnapshot.empty) return;
-
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const q = query(
-      collection(db, "items"), 
-      where("createdAt", ">=", yesterday.toISOString()),
-      orderBy("createdAt", "desc"),
-      limit(20)
-    );
-    const itemSnapshot = await getDocs(q);
-      
-    const items = itemSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
-
-    if (items.length === 0) return;
-
-    for (const subDoc of subSnapshot.docs) {
-      const { email, categories: userCategories } = subDoc.data();
-      
-      // Filter items by user categories if specified
-      let filteredItems = items;
-      if (userCategories && userCategories.length > 0) {
-        filteredItems = items.filter(item => 
-          item.categories.some((cat: string) => userCategories.includes(cat))
-        );
-      }
-
-      if (filteredItems.length === 0) continue;
-
-      console.log(`Sending filtered digest (${filteredItems.length} items) to ${email}`);
-      await sendDigestEmail(email, filteredItems);
-    }
-  } catch (err) {
-    console.error("Scheduled digest failed:", err);
-  }
-});
-
+// Start the server
 if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
-  startServer();
+  startServer().then(() => {
+    // Only import and setup crons if not on Vercel
+    import("./server/cron").then(m => m.setupCronJobs()).catch(console.error);
+  });
 }
+
+export default app;

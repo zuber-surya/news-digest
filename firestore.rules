@@ -15,19 +15,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    match /sources/{sourceId} {
+    match /sources/{allPaths=**} {
       allow read, write: if true;
     }
 
-    match /items/{itemId} {
+    match /items/{allPaths=**} {
       allow read, write: if true;
     }
 
-    match /subscriptions/{subId} {
+    match /subscriptions/{allPaths=**} {
       allow read, write: if true;
     }
 
-    match /digests/{digestId} {
+    match /digests/{allPaths=**} {
       allow read, write: if true;
     }
     
