@@ -378,7 +378,7 @@ async function startServer() {
 if (process.env.NODE_ENV !== "test" && !process.env.VERCEL) {
   startServer().then(() => {
     // Only import and setup crons if not on Vercel
-    import("./server/cron").then(m => m.setupCronJobs()).catch(console.error);
+    import("./server/cron.js").then(m => m.setupCronJobs()).catch(console.error);
   });
 }
 

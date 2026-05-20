@@ -1,14 +1,26 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { FeedItem } from "../src/types.js";
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY!,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+let aiClient: GoogleGenAI | null = null;
+
+function getAI(): GoogleGenAI {
+  if (!aiClient) {
+    const key = process.env.GEMINI_API_KEY;
+    // Check key and throw or log as needed when actually called
+    if (!key) {
+      throw new Error("GEMINI_API_KEY environment variable is required and currently missing.");
     }
+    aiClient = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
   }
-});
+  return aiClient;
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -32,7 +44,7 @@ export async function summarizeAndCategorize(item: Partial<FeedItem>) {
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await ai.models.generateContent({
+      const response = await getAI().models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [{ parts: [{ text: prompt }] }],
         config: {
