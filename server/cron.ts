@@ -27,26 +27,35 @@ export function setupCronJobs() {
       const snapshot = await getDocs(collection(db, "sources"));
       for (const sourceDoc of snapshot.docs) {
         const source = { id: sourceDoc.id, ...sourceDoc.data() } as any;
-        console.log(`Scraping source: ${source.name}`);
-        const items = await scrapeSource(source);
+        console.log(`[Cron] Starting scrape for source: ${source.name} (${source.url})`);
         
-        let savedInSource = 0;
-        for (const item of items) {
-          if (savedInSource >= 3) break;
+        try {
+          const items = await scrapeSource(source);
+          console.log(`[Cron] Found ${items.length} items for ${source.name}`);
+          
+          let savedInSource = 0;
+          for (const item of items) {
+            if (savedInSource >= 3) break;
 
-          const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
-          const existingSnapshot = await getDocs(q);
-          if (existingSnapshot.empty) {
-            await sleep(12000); 
-            
-            const aiResult = await summarizeAndCategorize(item);
-            await addDoc(collection(db, "items"), sanitizeFirestoreData({
-              ...item,
-              ...aiResult,
-              createdAt: new Date().toISOString()
-            }));
-            savedInSource++;
+            const q = query(collection(db, "items"), where("fingerprint", "==", item.fingerprint));
+            const existingSnapshot = await getDocs(q);
+            if (existingSnapshot.empty) {
+              console.log(`[Cron] Saving new item: ${item.title}`);
+              await sleep(12000); 
+              
+              const aiResult = await summarizeAndCategorize(item);
+              await addDoc(collection(db, "items"), sanitizeFirestoreData({
+                ...item,
+                ...aiResult,
+                createdAt: new Date().toISOString()
+              }));
+              savedInSource++;
+            }
           }
+          console.log(`[Cron] Finished ${source.name}. Saved ${savedInSource} new items.`);
+        } catch (sourceErr) {
+          console.error(`[Cron] Error scraping source ${source.name}:`, sourceErr);
+          // Continue to next source
         }
       }
     } catch (err) {
