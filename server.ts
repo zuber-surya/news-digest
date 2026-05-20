@@ -19,7 +19,10 @@ import {
   FieldValue
 } from "firebase/firestore";
 import { db, auth } from "./server/firebase.js";
-import firebaseConfig from "./firebase-applet-config.json";
+import { readFileSync } from "fs";
+const firebaseConfig = JSON.parse(
+  readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8")
+);
 import { scrapeSource } from "./server/scrapers.js";
 import { summarizeAndCategorize } from "./server/gemini.js";
 import { sendDigestEmail } from "./server/email.js";

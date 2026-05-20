@@ -1,8 +1,12 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { initializeFirestore } from 'firebase/firestore';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 
-import firebaseConfig from '../firebase-applet-config.json';
+const firebaseConfig = JSON.parse(
+  readFileSync(join(process.cwd(), 'firebase-applet-config.json'), 'utf8')
+);
 
 // Initialize Firebase Client SDK
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
